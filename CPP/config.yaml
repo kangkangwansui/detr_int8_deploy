@@ -1,0 +1,28 @@
+# _ _ _ _ 校准器的输入参数 _ _ _ _ #
+INPUT_W : 800
+INPUT_H : 800
+batchSize : 1
+read_cache : true
+INPUT_BLOB_NAME : "input"
+imgDir : "/home/zhoukang/quantCode/zkTest/tensorrt_test/calibration_data"  #校准数据集的路径(都是图片)
+calibFile : "/home/zhoukang/GithubProject/detr_int8_deploy/CPP/model_data/int8calib.table"  #选择保存的校准表的路径
+
+# _ _ _ _ 构建模型的输入参数 _ _ _ _ #
+isBuild : false  #是否构建模型
+verbose : false  #是否输出详细信息
+isSaveEngine : true  #是否保存引擎
+maxBatchSize : 1
+modelLenth : 800  #模型输入的尺寸
+dataType : "kINT8"
+
+modelname : "detr" #保存engine模型时的名字
+onnxFileName : "/home/zhoukang/GithubProject/detr_from_bubbliiiing/onnx/detr.onnx"  #构建模型的onnx文件
+EngineOutputFile : "/home/zhoukang/GithubProject/detr_int8_deploy/CPP/model_data"  #保存engine模型的路径
+
+# _ _ _ _ 模型推理的输入参数 _ _ _ _ #
+num : 100  #最多检测的目标个数，根据论文，为100
+classes : 21 #包括背景
+confidence : 0.5
+classes_txt : "/home/zhoukang/GithubProject/detr_from_bubbliiiing/model_data/voc_classes.txt"  #类别文件
+engineflie : "/home/zhoukang/GithubProject/detr_int8_deploy/CPP/model_data/detr_int8.engine"  #构建引擎后保存的路径
+img_path : "/home/zhoukang/GithubProject/detr_from_bubbliiiing/CPP/image/car.jpg"  #测试图片的路径
