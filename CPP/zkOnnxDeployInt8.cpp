@@ -82,37 +82,10 @@ bool zkOnnxDeployInt8::build(DataType dataType){
 }
 
 bool zkOnnxDeployInt8::infer(){
-    auto beforeTime = std::chrono::steady_clock::now();
     std::vector<OutputParam> boxes_information;
-    cv::Mat img = cv::imread(mParams.img_path);
-    cv::Mat rgbImage;
-    if (img.channels() == 3) {
-        rgbImage = img.clone(); 
-    } else {
-        // 将图像转换为RGB格式
-        cv::cvtColor(img, rgbImage, cv::COLOR_BGR2RGB);
-    }
-
-    float *input_blob = new float[mParams.modelLenth * mParams.modelLenth * 3];
-    //图像预处理
-    cv::Mat precesses_img = preprocess_img(rgbImage, mParams.modelLenth, mParams.modelLenth);
-
-    //将输入图片转为数据格式
-    const int channels = precesses_img.channels();
-    const int width = precesses_img.cols;
-    const int height = precesses_img.rows;
-
-    std::cout << "Hight is : " << height << "," << " Width is : " << width << std::endl;
-    for (int c = 0; c < channels; c++) {
-        for (int h = 0; h < height; h++) {
-            for (int w = 0; w < width; w++) {
-                input_blob[c * width * height + h * width + w] = precesses_img.at<cv::Vec3b>(h, w)[c] / 255.0f;
-            }
-        }
-    }
-
     std::string engineflie = mParams.engineflie;
     std::ifstream file(engineflie,std::ios::binary);
+
     if(!file.good()){
         std::cout << "引擎加载失败" << std::endl;
         return false;
@@ -177,15 +150,49 @@ bool zkOnnxDeployInt8::infer(){
     cudaStream_t stream;
     cudaStreamCreate(&stream);  //在GPU创建进程束
 
+    auto startTime = std::chrono::steady_clock::now();
+    cv::Mat img = cv::imread(mParams.img_path);
+    cv::Mat rgbImage;
+    if (img.channels() == 3) {
+        rgbImage = img.clone(); 
+    } else {
+        // 将图像转换为RGB格式
+        cv::cvtColor(img, rgbImage, cv::COLOR_BGR2RGB);
+    }
+
+    //图像预处理
+    cv::Mat precesses_img = preprocess_img(rgbImage, mParams.modelLenth, mParams.modelLenth);
+
+    float *input_blob = new float[mParams.modelLenth * mParams.modelLenth * 3];
+
+    const int channels = precesses_img.channels();
+    const int width = precesses_img.cols;
+    const int height = precesses_img.rows;
+
+    for (int c = 0; c < channels; c++) {
+        for (int h = 0; h < height; h++) {
+            for (int w = 0; w < width; w++) {
+                input_blob[c * width * height + h * width + w] = precesses_img.at<cv::Vec3b>(h, w)[c] / 255.0f;
+            }
+        }
+    }
+
+    auto Time1 = std::chrono::steady_clock::now();
+
     // 将输入数据从CPU传输到GPU
     cudaMemcpy(buffers[0], input_blob, input_size * sizeof(float), cudaMemcpyHostToDevice);  
 
+    auto Time2 = std::chrono::steady_clock::now();
+
     context->enqueueV2(buffers, stream, nullptr);
+
+    auto Time3 = std::chrono::steady_clock::now();
 
     cudaMemcpy(output_CpuBuffer_1, buffers[1],output_size_1 * sizeof(float),cudaMemcpyDeviceToHost);
     cudaMemcpy(output_CpuBuffer_2, buffers[2],output_size_2 * sizeof(float),cudaMemcpyDeviceToHost);
-
     cudaStreamSynchronize(stream);//等待输出数据传输完毕
+
+    auto Time4 = std::chrono::steady_clock::now();
 
     int output_softmax_size = output_size_1;
     float* output_softmax_1 = new float[output_softmax_size]();
@@ -201,11 +208,21 @@ bool zkOnnxDeployInt8::infer(){
 
     print_information(boxes_information);
 
-    auto afterTime = std::chrono::steady_clock::now();
+    auto endTime = std::chrono::steady_clock::now();
 
     //毫秒级
-	double duration_millsecond = std::chrono::duration<double, std::milli>(afterTime - beforeTime).count();
-	std::cout << duration_millsecond << "毫秒" << std::endl;
+	double per_process_time = std::chrono::duration<double, std::milli>(Time1 - startTime).count();
+    double cpy_c2g_time = std::chrono::duration<double, std::milli>(Time2 - Time1).count();
+    double infer_time = std::chrono::duration<double, std::milli>(Time3 - Time2).count();
+    double cpy_g2c_time = std::chrono::duration<double, std::milli>(Time4 - Time3).count();
+    double post_process_time = std::chrono::duration<double, std::milli>(endTime - Time4).count();
+    double totall_time = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+    std::cout << "图像处理时间 ： " << per_process_time << "毫秒" << std::endl;
+    std::cout << "cpu->gpu时间 ： " << cpy_c2g_time << "毫秒" << std::endl;
+    std::cout << "推理时间 ： " << infer_time << "毫秒" << std::endl;
+    std::cout << "gpu->cpu时间 ： " << cpy_g2c_time << "毫秒" << std::endl;
+	std::cout << "后处理时间 ： " << post_process_time << "毫秒" << std::endl;
+    std::cout << "总时间时间 ： " << totall_time << "毫秒" << std::endl;
 
     // 释放资源
     cudaFree(buffers[0]);
@@ -288,8 +305,8 @@ void interface(std::string yamlPath){
     input.onnxFileName = config["onnxFileName"].as<std::string>();
     input.dataType = get_data_type(config["dataType"].as<std::string>());
     input.EngineOutputFile = config["EngineOutputFile"].as<std::string>();
-    
 
+    
     zkOnnxDeployInt8 onnxDeployInt8(input);
 
     if(input.isBuild){
@@ -299,8 +316,8 @@ void interface(std::string yamlPath){
         infer_flag = onnxDeployInt8.infer();
         std::cout << "infer_flag: " << infer_flag << std::endl;
     }
-}
 
+}
 
 int main(){
     std::string yamlPath = "/home/zhoukang/GithubProject/detr_int8_deploy/CPP/config.yaml";
